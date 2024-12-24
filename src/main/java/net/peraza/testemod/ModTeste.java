@@ -1,10 +1,14 @@
 package net.peraza.testemod;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.ServerChatEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -16,46 +20,84 @@ import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
 
-// The value here should match an entry in the META-INF/mods.toml file
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
 @Mod(ModTeste.MOD_ID)
 public class ModTeste {
-    // Define mod id in a common place for everything to reference
     public static final String MOD_ID = "testemod";
-    // Directly reference a slf4j logger
     private static final Logger LOGGER = LogUtils.getLogger();
 
     public ModTeste() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
         modEventBus.addListener(this::commonSetup);
         MinecraftForge.EVENT_BUS.register(this);
-        modEventBus.addListener(this::addCreative);
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+        MinecraftForge.EVENT_BUS.register(CommandLogger.class);
     }
 
     private void commonSetup(final FMLCommonSetupEvent event) {
-
     }
 
-    // Add the example block item to the building blocks tab
-    private void addCreative(BuildCreativeModeTabContentsEvent event) {
-
-    }
-
-    // You can use SubscribeEvent and let the Event Bus discover methods to call
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
-
     }
 
-    // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent
     @Mod.EventBusSubscriber(modid = MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
     public static class ClientModEvents {
         @SubscribeEvent
-        public static void onClientSetup(FMLClientSetupEvent event)
-        {
-            // Some client setup code
+        public static void onClientSetup(FMLClientSetupEvent event) {
             LOGGER.info("HELLO FROM CLIENT SETUP");
             LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
+        }
+    }
+
+    public static class CommandLogger {
+        private static final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+        @SubscribeEvent
+        public static void onCommandExecuted(RegisterCommandsEvent event) {
+            event.getDispatcher().register(
+                    Commands.literal("log")
+                            .then(Commands.argument("message", StringArgumentType.string())
+                                    .executes(context -> {
+                                        String message = StringArgumentType.getString(context, "message");
+                                        String playerName = context.getSource().getPlayerOrException().getName().getString();
+                                        String timestamp = LocalDateTime.now().format(formatter);
+                                        String logEntry = String.format("[%s] %s: %s", timestamp, playerName, message);
+
+                                        logToFile(logEntry);
+
+                                        context.getSource().sendSuccess(() -> Component.literal("Você executou o comando: " + message), false);
+                                        return 1;
+                                    })
+                            )
+            );
+        }
+
+        @SubscribeEvent
+        public static void onChatMessage(ServerChatEvent event) {
+            String message = String.valueOf(event.getMessage());
+            String playerName = event.getPlayer().getName().getString();
+            String timestamp = LocalDateTime.now().format(formatter);
+            String logEntry = String.format("[%s] %s: %s", timestamp, playerName, message);
+
+            logToFile(logEntry);
+        }
+
+        private static void logToFile(String message) {
+            Path logPath = Paths.get("config/command_logs.txt");
+
+            try (PrintWriter out = new PrintWriter(new FileWriter(logPath.toFile(), true))) {
+                out.println(message);
+            } catch (IOException e) {
+                LOGGER.error("Erro ao gravar o log em arquivo: ", e);
+            }
         }
     }
 }
